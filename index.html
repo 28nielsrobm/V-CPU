@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini Virtual CPU</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --panel2: #171f2a;
+      --text: #e8eef7;
+      --muted: #9fb0c3;
+      --accent: #6ea8fe;
+      --border: #243244;
+      --good: #66d9a8;
+      --bad: #ff7b7b;
+      --warn: #ffd166;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: Inter, Arial, sans-serif; }
+    body { padding: 16px; }
+
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { margin: 6px 0; color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.25);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    button, label.button {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font: inherit;
+      transition: 0.15s ease;
+    }
+
+    button:hover, label.button:hover { border-color: var(--accent); transform: translateY(-1px); }
+    button.primary { background: var(--accent); color: #08111f; font-weight: 700; }
+    button.danger { background: #3a1820; border-color: #5a2a38; color: #ffd5dd; }
+
+    input[type="file"] { display: none; }
+
+    textarea {
+      width: 100%;
+      min-height: 420px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      background: #0e141d;
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.45;
+      outline: none;
+    }
+
+    textarea:focus { border-color: var(--accent); }
+
+    .two-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .stat {
+      background: #0e141d;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .stat b { color: var(--warn); }
+
+    .log {
+      white-space: pre-wrap;
+      background: #0e141d;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      min-height: 140px;
+      max-height: 260px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 13px;
+    }
+
+    .footer {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .ok { color: var(--good); }
+    .err { color: var(--bad); }
+
+    @media (max-width: 980px) {
+      .grid, .two-cols { grid-template-columns: 1fr; }
+      textarea { min-height: 280px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Mini Virtual CPU</h1>
+  <p>Assembler + emulator + file import/export. One instruction per line in binary mode.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="controls">
+        <button class="primary" id="assembleBtn">Assemble → Binary</button>
+        <button id="loadBinaryBtn">Load Binary → CPU</button>
+        <button id="stepBtn">Step</button>
+        <button id="runBtn">Run</button>
+        <button id="resetBtn" class="danger">Reset CPU</button>
+
+        <label class="button" for="asmFile">Import Assembly</label>
+        <input id="asmFile" type="file" accept=".asm,.txt,text/plain" />
+
+        <label class="button" for="binFile">Import Binary</label>
+        <input id="binFile" type="file" accept=".bin,.txt,text/plain" />
+
+        <button id="exportAsmBtn">Export Assembly</button>
+        <button id="exportBinBtn">Export Binary</button>
+      </div>
+
+      <div class="two-cols">
+        <div>
+          <p><b>Assembly</b></p>
+          <textarea id="asmInput" spellcheck="false">; Example program
+LDI R0, 5
+LDI R1, 1
+loop:
+SUB R0, R1
+OUT R0
+JZ done
+JMP loop
+done:
+HLT</textarea>
+        </div>
+
+        <div>
+          <p><b>Binary</b></p>
+          <textarea id="binInput" spellcheck="false" placeholder="Binary output or imported 16-bit instructions here..."></textarea>
+        </div>
+      </div>
+
+      <p class="small">
+        Supported instructions: NOP, LDI, ADD, SUB, MOV, JMP, JZ, OUT, HLT.  
+        Register fields are 2 bits, so only R0–R3 are valid.
+      </p>
+    </div>
+
+    <div class="card">
+      <p><b>CPU State</b></p>
+      <div class="status" id="cpuState"></div>
+
+      <p style="margin-top:12px;"><b>Output / Log</b></p>
+      <div class="log" id="log"></div>
+
+      <p class="footer">
+        GitHub Pages tip: place this file in your repository root as <code>index.html</code>, then enable Pages from the repo settings.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    class VirtualCPU {
+      constructor() {
+        this.reset();
+      }
+
+      reset() {
+        this.registers = [0, 0, 0, 0];
+        this.pc = 0;
+        this.zf = 0;
+        this.memory = [];
+        this.running = false;
+        this.halted = false;
+      }
+
+      loadProgramFromBinary(binaryText) {
+        this.reset();
+        const lines = binaryText
+          .split(/\r?\n/)
+          .map(line => line.trim())
+          .filter(Boolean);
+
+        for (const line of lines) {
+          if (!/^[01]{16}$/.test(line)) {
+            throw new Error(`Invalid binary instruction: "${line}"`);
+          }
+          this.memory.push(line);
+        }
+      }
+
+      execute(instruction) {
+        const opcode = instruction.slice(0, 4);
+        const r1 = parseInt(instruction.slice(4, 6), 2);
+        const r2 = parseInt(instruction.slice(6, 8), 2);
+        const imm = parseInt(instruction.slice(8, 16), 2);
+
+        if (opcode === "0000") {
+          // NOP
+          return null;
+        } else if (opcode === "0001") {
+          // LDI
+          this.registers[r1] = imm;
+        } else if (opcode === "0010") {
+          // ADD
+          this.registers[r1] += this.registers[r2];
+          this.updateZF(this.registers[r1]);
+        } else if (opcode === "0011") {
+          // SUB
+          this.registers[r1] -= this.registers[r2];
+          this.updateZF(this.registers[r1]);
+        } else if (opcode === "0100") {
+          // MOV
+          this.registers[r1] = this.registers[r2];
+        } else if (opcode === "0101") {
+          // JMP
+          this.pc = imm - 1;
+        } else if (opcode === "0110") {
+          // JZ
+          if (this.zf === 1) this.pc = imm - 1;
+        } else if (opcode === "0111") {
+          // OUT
+          return `OUT: ${this.registers[r1]}`;
+        } else if (opcode === "1111") {
+          // HLT
+          this.running = false;
+          this.halted = true;
+        } else {
+          throw new Error(`Unknown opcode: ${opcode}`);
+        }
+        return null;
+      }
+
+      updateZF(value) {
+        this.zf = (value === 0) ? 1 : 0;
+      }
+    }
+
+    const OPCODES = {
+      NOP: "0000",
+      LDI: "0001",
+      ADD: "0010",
+      SUB: "0011",
+      MOV: "0100",
+      JMP: "0101",
+      JZ:  "0110",
+      OUT: "0111",
+      HLT: "1111"
+    };
+
+    const cpu = new VirtualCPU();
+
+    const asmInput = document.getElementById("asmInput");
+    const binInput = document.getElementById("binInput");
+    const cpuState = document.getElementById("cpuState");
+    const logEl = document.getElementById("log");
+
+    function log(message, kind = "") {
+      const line = document.createElement("div");
+      line.textContent = message;
+      if (kind) line.className = kind;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function clearLog() {
+      logEl.textContent = "";
+    }
+
+    function downloadText(filename, text) {
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function stripComment(line) {
+      return line
+        .replace(/;.*$/, "")
+        .replace(/\/\/.*$/, "")
+        .replace(/#.*$/, "")
+        .trim();
+    }
+
+    function parseRegister(token) {
+      const t = token.trim().toUpperCase();
+      if (!/^R[0-3]$/.test(t)) {
+        throw new Error(`Invalid register "${token}". Use R0, R1, R2, or R3.`);
+      }
+      return Number(t.slice(1));
+    }
+
+    function parseNumber(token, labels = {}) {
+      const t = token.trim();
+      if (t in labels) return labels[t];
+      if (/^0b[01]+$/i.test(t)) return parseInt(t.slice(2), 2);
+      if (/^0x[0-9a-f]+$/i.test(t)) return parseInt(t, 16);
+      if (/^-?\d+$/.test(t)) return parseInt(t, 10);
+      throw new Error(`Unknown value "${token}"`);
+    }
+
+    function toBits(value, width) {
+      const max = (1 << width) - 1;
+      if (!Number.isInteger(value) || value < 0 || value > max) {
+        throw new Error(`Value ${value} does not fit in ${width} bits.`);
+      }
+      return value.toString(2).padStart(width, "0");
+    }
+
+    function encode(op, r1 = 0, r2 = 0, imm = 0) {
+      return (
+        OPCODES[op] +
+        toBits(r1, 2) +
+        toBits(r2, 2) +
+        toBits(imm, 8)
+      );
+    }
+
+    function tokenizeInstruction(line) {
+      return line
+        .replace(/,/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+    }
+
+    function firstPassLabels(sourceLines) {
+      const labels = {};
+      let pc = 0;
+
+      for (let raw of sourceLines) {
+        let line = stripComment(raw);
+        if (!line) continue;
+
+        while (true) {
+          const colonIndex = line.indexOf(":");
+          if (colonIndex === -1) break;
+
+          const label = line.slice(0, colonIndex).trim();
+          if (!label || /\s/.test(label)) {
+            throw new Error(`Invalid label name in line: "${raw}"`);
+          }
+          if (labels[label] !== undefined) {
+            throw new Error(`Duplicate label: ${label}`);
+          }
+
+          labels[label] = pc;
+          line = line.slice(colonIndex + 1).trim();
+          if (!line) break;
+        }
+
+        if (line) pc++;
+      }
+
+      return labels;
+    }
+
+    function assemble(source) {
+      const lines = source.split(/\r?\n/);
+      const labels = firstPassLabels(lines);
+      const output = [];
+
+      for (let raw of lines) {
+        let line = stripComment(raw);
+        if (!line) continue;
+
+        while (true) {
+          const colonIndex = line.indexOf(":");
+          if (colonIndex === -1) break;
+          line = line.slice(colonIndex + 1).trim();
+          if (!line) break;
+        }
+        if (!line) continue;
+
+        const parts = tokenizeInstruction(line);
+        const op = parts[0].toUpperCase();
+
+        switch (op) {
+          case "NOP":
+            output.push(encode("NOP"));
+            break;
+
+          case "LDI": {
+            if (parts.length !== 3) throw new Error(`LDI format: LDI Rn, value`);
+            const r1 = parseRegister(parts[1]);
+            const imm = parseNumber(parts[2], labels);
+            output.push(encode("LDI", r1, 0, imm));
+            break;
+          }
+
+          case "ADD": {
+            if (parts.length !== 3) throw new Error(`ADD format: ADD Rn, Rm`);
+            const r1 = parseRegister(parts[1]);
+            const r2 = parseRegister(parts[2]);
+            output.push(encode("ADD", r1, r2, 0));
+            break;
+          }
+
+          case "SUB": {
+            if (parts.length !== 3) throw new Error(`SUB format: SUB Rn, Rm`);
+            const r1 = parseRegister(parts[1]);
+            const r2 = parseRegister(parts[2]);
+            output.push(encode("SUB", r1, r2, 0));
+            break;
+          }
+
+          case "MOV": {
+            if (parts.length !== 3) throw new Error(`MOV format: MOV Rn, Rm`);
+            const r1 = parseRegister(parts[1]);
+            const r2 = parseRegister(parts[2]);
+            output.push(encode("MOV", r1, r2, 0));
+            break;
+          }
+
+          case "JMP": {
+            if (parts.length !== 2) throw new Error(`JMP format: JMP label_or_address`);
+            const imm = parseNumber(parts[1], labels);
+            output.push(encode("JMP", 0, 0, imm));
+            break;
+          }
+
+          case "JZ": {
+            if (parts.length !== 2) throw new Error(`JZ format: JZ label_or_address`);
+            const imm = parseNumber(parts[1], labels);
+            output.push(encode("JZ", 0, 0, imm));
+            break;
+          }
+
+          case "OUT": {
+            if (parts.length !== 2) throw new Error(`OUT format: OUT Rn`);
+            const r1 = parseRegister(parts[1]);
+            output.push(encode("OUT", r1, 0, 0));
+            break;
+          }
+
+          case "HLT":
+            output.push(encode("HLT"));
+            break;
+
+          default:
+            throw new Error(`Unknown instruction: ${op}`);
+        }
+      }
+
+      return output.join("\n");
+    }
+
+    function updateCPUState() {
+      cpuState.innerHTML = `
+        <div class="stat">R0 = <b>${cpu.registers[0]}</b></div>
+        <div class="stat">R1 = <b>${cpu.registers[1]}</b></div>
+        <div class="stat">R2 = <b>${cpu.registers[2]}</b></div>
+        <div class="stat">R3 = <b>${cpu.registers[3]}</b></div>
+        <div class="stat">PC = <b>${cpu.pc}</b></div>
+        <div class="stat">ZF = <b>${cpu.zf}</b></div>
+        <div class="stat">Running = <b>${cpu.running}</b></div>
+        <div class="stat">Program size = <b>${cpu.memory.length}</b></div>
+      `;
+    }
+
+    function ensureBinaryLoaded() {
+      if (cpu.memory.length > 0) return;
+      const text = binInput.value.trim();
+      if (!text) throw new Error("No binary program loaded.");
+      cpu.loadProgramFromBinary(text);
+    }
+
+    function runOneStep() {
+      ensureBinaryLoaded();
+      if (cpu.pc >= cpu.memory.length || cpu.halted) {
+        cpu.running = false;
+        return;
+      }
+
+      cpu.running = true;
+      const instruction = cpu.memory[cpu.pc];
+      const out = cpu.execute(instruction);
+
+      cpu.pc += 1;
+
+      if (out) log(out, "ok");
+      updateCPUState();
+    }
+
+    function runProgram() {
+      ensureBinaryLoaded();
+      cpu.running = true;
+
+      const maxSteps = 100000;
+      let steps = 0;
+
+      while (cpu.running && cpu.pc < cpu.memory.length && steps < maxSteps) {
+        const instruction = cpu.memory[cpu.pc];
+        const out = cpu.execute(instruction);
+        cpu.pc += 1;
+        if (out) log(out, "ok");
+        steps += 1;
+      }
+
+      if (steps >= maxSteps) {
+        log("Stopped after reaching the step limit. Possible infinite loop.", "err");
+      } else if (cpu.halted) {
+        log("Program halted.", "ok");
+      } else {
+        log("Program finished.", "ok");
+      }
+
+      cpu.running = false;
+      updateCPUState();
+    }
+
+    document.getElementById("assembleBtn").addEventListener("click", () => {
+      try {
+        clearLog();
+        const binary = assemble(asmInput.value);
+        binInput.value = binary;
+        cpu.loadProgramFromBinary(binary);
+        cpu.pc = 0;
+        cpu.running = false;
+        cpu.halted = false;
+        updateCPUState();
+        log("Assembly successful. Binary loaded into CPU.", "ok");
+      } catch (err) {
+        log(err.message, "err");
+      }
+    });
+
+    document.getElementById("loadBinaryBtn").addEventListener("click", () => {
+      try {
+        clearLog();
+        cpu.loadProgramFromBinary(binInput.value);
+        updateCPUState();
+        log("Binary loaded into CPU.", "ok");
+      } catch (err) {
+        log(err.message, "err");
+      }
+    });
+
+    document.getElementById("stepBtn").addEventListener("click", () => {
+      try {
+        runOneStep();
+      } catch (err) {
+        log(err.message, "err");
+      }
+    });
+
+    document.getElementById("runBtn").addEventListener("click", () => {
+      try {
+        runProgram();
+      } catch (err) {
+        log(err.message, "err");
+      }
+    });
+
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      cpu.reset();
+      updateCPUState();
+      clearLog();
+      log("CPU reset.", "ok");
+    });
+
+    document.getElementById("exportAsmBtn").addEventListener("click", () => {
+      downloadText("program.asm", asmInput.value);
+    });
+
+    document.getElementById("exportBinBtn").addEventListener("click", () => {
+      const text = binInput.value.trim();
+      if (!text) {
+        try {
+          const assembled = assemble(asmInput.value);
+          binInput.value = assembled;
+          downloadText("program.bin.txt", assembled + "\n");
+          return;
+        } catch (err) {
+          log(err.message, "err");
+          return;
+        }
+      }
+      downloadText("program.bin.txt", text + "\n");
+    });
+
+    document.getElementById("asmFile").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      asmInput.value = text;
+      log(`Imported assembly file: ${file.name}`, "ok");
+    });
+
+    document.getElementById("binFile").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      binInput.value = text;
+      log(`Imported binary file: ${file.name}`, "ok");
+    });
+
+    // Start state
+    updateCPUState();
+    log("Ready. Click 'Assemble → Binary' to build the example program.", "ok");
+  </script>
+</body>
+</html>
