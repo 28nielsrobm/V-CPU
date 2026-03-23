@@ -35,7 +35,7 @@ done:
 HLT
 1111000000000000
 
-## Instruction Reference (ASM → Binary Examples):
+### Instruction Reference (ASM → Binary Examples):
 
 NOP
 0000000000000000
@@ -91,7 +91,7 @@ OUT R3
 HLT
 1111000000000000
 
-## Opcode Table:
+#### Opcode Table:
 | Instruction | Opcode |
 | ----------- | ------ |
 | NOP         | 0000   |
@@ -103,3 +103,34 @@ HLT
 | JZ          | 0110   |
 | OUT         | 0111   |
 | HLT         | 1111   |
+
+##### Complete Example:
+ASM-
+; Example program
+LDI R0, 5
+LDI R1, 1
+loop:
+SUB R0, R1
+OUT R0
+JZ done
+JMP loop
+done:
+HLT
+
+Raw Binary-
+0001000000000101
+0001010000000001
+0011000100000000
+0111000000000000
+0110000000000110
+0101000000000010
+1111000000000000
+
+Output-
+Binary loaded into CPU.
+OUT: 4
+OUT: 3
+OUT: 2
+OUT: 1
+OUT: 0
+Program halted.
