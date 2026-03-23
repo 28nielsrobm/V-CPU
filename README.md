@@ -1,2 +1,105 @@
 # V-CPU
 Virtual CPU
+
+## Instruction Set & Binary Encoding:
+
+[ OPCODE (4 bits) ][ R1 (2 bits) ][ R2 (2 bits) ][ IMM / ADDR (8 bits) ]
+
+R0 = 00
+R1 = 01
+R2 = 10
+R3 = 11
+
+## Example Program (Assembly → Binary):
+
+LDI R0, 5
+0001000000000101
+
+LDI R1, 1
+0001010000000001
+
+loop:
+SUB R0, R1
+0011000100000000
+
+OUT R0
+0111000000000000
+
+JZ done
+0110000000000110
+
+JMP loop
+0101000000000010
+
+done:
+HLT
+1111000000000000
+
+## Instruction Reference (ASM → Binary Examples):
+
+NOP
+0000000000000000
+
+LDI R0, 10
+0001000000001010
+
+LDI R1, 10
+0001010000001010
+
+LDI R2, 10
+0001100000001010
+
+LDI R3, 10
+0001110000001010
+
+ADD R0, R1
+0010000100000000
+
+ADD R2, R3
+0010101100000000
+
+SUB R0, R1
+0011000100000000
+
+SUB R3, R2
+0011111000000000
+
+MOV R0, R1
+0100000100000000
+
+MOV R2, R3
+0100101100000000
+
+JMP 5
+0101000000000101
+
+JZ 8
+0110000000001000
+
+OUT R0
+0111000000000000
+
+OUT R1
+0111010000000000
+
+OUT R2
+0111100000000000
+
+OUT R3
+0111110000000000
+
+HLT
+1111000000000000
+
+## Opcode Table:
+| Instruction | Opcode |
+| ----------- | ------ |
+| NOP         | 0000   |
+| LDI         | 0001   |
+| ADD         | 0010   |
+| SUB         | 0011   |
+| MOV         | 0100   |
+| JMP         | 0101   |
+| JZ          | 0110   |
+| OUT         | 0111   |
+| HLT         | 1111   |
